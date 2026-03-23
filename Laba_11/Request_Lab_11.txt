@@ -1,0 +1,117 @@
+SELECT *
+FROM pg_indexes
+WHERE tablename = 'tablename';
+1)
+------------------------------------------------------------------
+CREATE INDEX idx_contract_fk ON contract(id_client, id_realtor, id_realty);
+
+EXPLAIN ANALYZE
+SELECT client.second_name, CONCAT(r.street, ' ', r.house) AS adress
+FROM contract
+JOIN client ON client.id = contract.id_client
+JOIN realty r ON r.id = contract.id_realty
+WHERE id_client <= 5 AND id_realtor > 5;
+
+EXPLAIN ANALYZE
+SELECT COUNT(*) FROM contract
+WHERE id_client <= 5 AND id_realtor > 5;
+
+DROP INDEX idx_contract_fk;
+------------------------------------------------------------------
+3)
+------------------------------------------------------------------
+CREATE INDEX idx_contract_realtor_client ON contract(id_realtor, id_client);
+
+EXPLAIN ANALYZE
+SELECT realtor.second_name, client.second_name
+FROM contract
+JOIN client ON client.id = contract.id_client
+JOIN realtor ON realtor.id = contract.id_realtor;
+
+EXPLAIN ANALYZE
+SELECT * FROM contract
+WHERE id_client = 6 AND id_realtor = 2;
+
+DROP INDEX idx_contract_realtor_client;
+------------------------------------------------------------------
+5)
+------------------------------------------------------------------
+CREATE UNIQUE INDEX idx_realtor_second_name ON realtor(LOWER(second_name));
+
+EXPLAIN ANALYZE
+SELECT * FROM realtor
+WHERE second_name = 'Сидоров';
+
+DROP INDEX idx_realtor_second_name;
+------------------------------------------------------------------
+7)
+------------------------------------------------------------------
+CREATE EXTENSION pg_trgm;
+
+CREATE INDEX idx_realty_city_trgm ON realty USING GIN (city gin_trgm_ops);
+
+EXPLAIN ANALYZE
+SELECT * FROM realty
+WHERE city LIKE ('%ск%');
+------------------------------------------------------------------
+9)
+1.
+------------------------------------------------------------------
+// DATABASE: test_base (моя БД с большим кол-вом данных)
+CREATE INDEX id_perf_test_id ON perf_test USING BRIN (id);
+
+EXPLAIN ANALYZE
+SELECT * FROM perf_test
+WHERE id = 7200000;
+------------------------------------------------------------------
+2.
+------------------------------------------------------------------
+CREATE INDEX ixd_client_second_first_name ON client((second_name || ' ' || first_name));
+
+EXPLAIN ANALYZE
+SELECT * FROM client
+WHERE (second_name || ' ' || first_name) = 'Kirill Oleg';
+------------------------------------------------------------------
+//Индекс на id
+
+SELECT * FROM perf_test
+LIMIT 10;
+
+SELECT * FROM pg_indexes
+WHERE tablename = 'perf_test';
+
+EXPLAIN ANALYZE
+SELECT * FROM perf_test
+WHERE id > 9800000;
+------------------------------------------------------------------
+Примеры на моих таблицах, где очень много данных, чтобы показать что выполняется действительно индексное сканирование
+------------------------------------------------------------------
+//Составной индекс на 2 строки и особенности
+
+CREATE INDEX idx_perf_test_reason_annotation ON perf_test(reason, annotation);
+
+EXPLAIN ANALYZE 
+SELECT * FROM perf_test
+WHERE reason LIKE('a%') AND annotation LIKE('AB%'); //Сканирование по индексу
+
+EXPLAIN ANALYZE 
+SELECT * FROM perf_test
+WHERE reason LIKE('abc%'); //Сканирование по индексу
+
+EXPLAIN ANALYZE 
+SELECT * FROM perf_test
+WHERE annotation LIKE('ABC%'); //Последовательное сканирование
+------------------------------------------------------------------
+//GIN индекс
+
+CREATE EXTENSION pg_trgm;
+
+CREATE INDEX idx_perf_test_annotation ON perf_test USING GIN (annotation gin_trgm_ops);
+
+EXPLAIN ANALYZE
+SELECT * FROM perf_test
+WHERE annotation LIKE ('%DF%');
+
+EXPLAIN ANALYZE
+SELECT * FROM perf_test
+WHERE annotation LIKE ('%ADF%');
