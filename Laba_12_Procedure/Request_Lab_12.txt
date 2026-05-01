@@ -1,0 +1,187 @@
+1)
+----------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE print_contract_info()
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	rec RECORD;
+BEGIN
+	
+	FOR rec IN SELECT c.id, CONCAT(client.second_name, ' ', client.first_name) AS client_name,
+			CONCAT(realtor.second_name, ' ', realtor.first_name) AS realtor_name,
+			r_t.realty_type, r_p.price
+			FROM contract c
+			JOIN client ON client.id = c.id_client
+			JOIN realtor ON realtor.id = c.id_realtor
+			JOIN realty ON realty.id = c.id_realty
+			JOIN realty_type r_t ON r_t.id = realty.realty_type
+			JOIN realty_price r_p ON r_p.id = realty.realty_price
+	LOOP
+		RAISE INFO 'Contract id: %, client name: %, realtor name: %, realty type: %, realty price: %',
+					rec.id, rec.client_name, rec.realtor_name, rec.realty_type, rec.price;
+	END LOOP;
+END;
+$$;
+
+CALL print_contract_info();
+----------------------------------------------------------------
+3)
+----------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE check_unique_second_name()
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	rec RECORD;
+BEGIN
+	FOR rec IN SELECT second_name, COUNT(*) AS count_names
+				FROM client
+				GROUP BY second_name
+				ORDER BY COUNT(*) ASC
+	LOOP
+		IF rec.count_names > 1 THEN
+			RAISE EXCEPTION 'Not unique second name: %', rec.second_name;
+		END IF;
+		
+		RAISE INFO 'Client: %', rec.second_name;
+	END LOOP;
+END;
+$$;
+
+BEGIN;
+	ALTER TABLE client DISABLE TRIGGER ALL;
+	INSERT INTO client (first_name, second_name, passport_series, passport_number, phone) VALUES
+('Серега', 'Белов', '6585', '789465', '+79854521685'),
+('Влад', 'Kirill', '4521', '745885', '+79854526525');
+	SELECT * FROM client;
+	CALL check_unique_second_name();
+ROLLBACK;
+----------------------------------------------------------------
+5)
+----------------------------------------------------------------
+CREATE OR REPLACE FUNCTION check_client_update_time()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+	IF EXTRACT(HOUR FROM CURRENT_TIMESTAMP) >= 18 THEN
+		RAISE EXCEPTION 'Denied update after 18:00';
+	END IF;
+
+	RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER t_client_time_update
+BEFORE UPDATE ON client
+FOR EACH ROW
+EXECUTE FUNCTION check_client_update_time();
+
+DROP TRIGGER t_client_time_update ON client;
+
+BEGIN;
+	SELECT * FROM client;
+	UPDATE client SET second_name = 'ASDASAD'
+	WHERE id = 6;
+ROLLBACK;
+
+SELECT * 
+FROM pg_trigger
+JOIN pg_class ON pg_class.oid = pg_trigger.tgrelid
+WHERE relname = 'client';
+----------------------------------------------------------------
+8)
+----------------------------------------------------------------
+CREATE OR REPLACE FUNCTION check_client_phone()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+	IF NEW.phone IS NULL OR NEW.phone !~ '^\\+7[0-9]{10}$' THEN
+        RAISE EXCEPTION 'Неверный формат номера телефона: %', NEW.phone;
+    END IF;
+	
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER t_check_client_phone
+BEFORE INSERT OR UPDATE ON client
+FOR EACH ROW
+EXECUTE FUNCTION check_client_phone();
+
+DROP TRIGGER t_check_client_phone ON client;
+
+BEGIN;
+	INSERT INTO client (first_name, second_name, passport_series, passport_number, phone) VALUES
+		('Серега', 'Белов', '6585', '789465', '+7dfsfd525');
+	SELECT * FROM client;
+ROLLBACK;
+----------------------------------------------------------------
+9)
+1.
+----------------------------------------------------------------
+CREATE OR REPLACE FUNCTION check_client_update_time() //Нельзя обновлять после установленного времени + вывод деталей (имя, оператор)
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+	IF EXTRACT(HOUR FROM CURRENT_TIMESTAMP) >= 18 THEN
+		RAISE EXCEPTION 'Denied update after 18:00';
+	END IF;
+
+	RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER t_client_time_update
+BEFORE UPDATE ON client
+FOR EACH ROW
+EXECUTE FUNCTION check_client_update_time();
+
+DROP TRIGGER t_client_time_update ON client;
+
+CREATE OR REPLACE PROCEDURE exception_update_client_time()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+	UPDATE client SET second_name = 'ASDASAD'
+	WHERE id = 6;
+
+	EXCEPTION WHEN OTHERS THEN
+		RAISE NOTICE 'The error caught';
+		RAISE NOTICE 'Error name: %', SQLERRM;
+		RAISE NOTICE 'Error details: %', SQLSTATE;
+END;
+$$;
+
+BEGIN;
+CALL exception_update_client_time();
+ROLLBACK;
+----------------------------------------------------------------
+2.
+----------------------------------------------------------------
+CREATE OR REPLACE FUNCTION division() //Ловим ошибку деления на 0 по коду ошибки
+RETURNS INT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	val INT;
+BEGIN
+	val := 5 / 0;
+	RETURN val;
+END;
+$$;
+
+CREATE OR REPLACE PROCEDURE check_division()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+	SELECT division();
+
+	EXCEPTION WHEN SQLSTATE '22012' THEN
+		RAISE EXCEPTION 'Division by zero';
+END;
+$$;
+
+CALL check_division();
+----------------------------------------------------------------

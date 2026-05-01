@@ -1,0 +1,184 @@
+1)
+------------------------------------------------------
+SELECT * FROM contract;
+
+CREATE OR REPLACE FUNCTION sort_contract_by_date()
+RETURNS TABLE (id INT, date_s DATE)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	rec RECORD;
+	cur CURSOR FOR SELECT * FROM contract
+		WHERE date_start > '2025-07-01';
+BEGIN
+	OPEN cur;
+	LOOP
+		FETCH cur INTO rec;
+		EXIT WHEN NOT FOUND;
+		id := rec.id;
+		date_s := rec.date_start;
+		RETURN NEXT;
+	END LOOP;
+	CLOSE cur;
+	RETURN;
+END;
+$$;
+
+DROP FUNCTION sort_contract_by_date;
+
+SELECT * FROM sort_contract_by_date();
+------------------------------------------------------
+3)
+------------------------------------------------------
+CREATE OR REPLACE FUNCTION count_contract_by_date()
+RETURNS INT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	count_contract INT := 0;
+	rec RECORD;
+	cur CURSOR FOR SELECT * FROM contract
+		WHERE date_start BETWEEN '2025-06-01' AND '2025-08-31';
+BEGIN
+	FOR rec IN cur LOOP
+		count_contract := count_contract + 1;
+	END LOOP;
+
+	RETURN count_contract;
+END;
+$$;
+
+DROP FUNCTION count_contract_by_date;
+
+SELECT count_contract_by_date();
+------------------------------------------------------
+5)
+------------------------------------------------------
+CREATE OR REPLACE PROCEDURE realty_price_exceed_avg()
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	rec RECORD;
+	cur REFCURSOR;
+	avg_price BIGINT;
+BEGIN
+	SELECT AVG(price) INTO avg_price
+	FROM realty_price;
+
+	RAISE INFO 'AVG realty price: %', avg_price;
+
+	OPEN cur FOR SELECT r_t.realty_type AS t, r_p.price AS p
+						FROM realty
+						JOIN realty_price r_p ON r_p.id = realty.realty_price
+						JOIN realty_type r_t ON r_t.id = realty.realty_type
+						WHERE r_p.price > avg_price;
+	LOOP
+		FETCH cur INTO rec;
+		EXIT WHEN NOT FOUND;
+		RAISE INFO 'Realty type: %, Realty price: %', rec.t, rec.p;
+	END LOOP;
+	
+	CLOSE cur;
+END;
+$$;
+
+DROP PROCEDURE realty_price_exceed_avg;
+
+CALL realty_price_exceed_avg();
+------------------------------------------------------
+7)
+------------------------------------------------------
+SELECT * FROM contract;
+
+CREATE OR REPLACE PROCEDURE max_num_contract_info()
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	rec RECORD;
+	max_contract_num INT;
+BEGIN
+	SELECT MAX(id) INTO max_contract_num
+	FROM contract;
+	
+	FOR rec IN SELECT c.id, CONCAT(client.second_name, ' ', client.first_name) AS client_name
+			FROM contract c
+			JOIN client ON client.id = c.id_client
+			WHERE c.id = max_contract_num
+	LOOP
+		RAISE INFO 'ID contract: %, CLient name: %', rec.id, rec.client_name;
+	END LOOP;
+END;
+$$;
+
+DROP PROCEDURE max_num_contract_info;
+
+CALL max_num_contract_info();
+------------------------------------------------------
+9)
+1.
+------------------------------------------------------
+SELECT * FROM client;
+SELECT * FROM realtor;
+
+CREATE OR REPLACE PROCEDURE exchange_e_mail() //Меняем местами email риелторов и клиентов
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	rec_client RECORD;
+	rec_realtor RECORD;
+	cur_client CURSOR FOR SELECT * FROM client;
+	cur_realtor CURSOR FOR SELECT * FROM realtor;
+	temp_client_e_mail VARCHAR;
+BEGIN
+	OPEN cur_client;
+	OPEN cur_realtor;
+
+	LOOP
+		FETCH cur_client INTO rec_client;
+		EXIT WHEN NOT FOUND;
+
+		FETCH cur_realtor INTO rec_realtor;
+		EXIT WHEN NOT FOUND;
+
+		RAISE INFO 'Change e-mail client_id: %, realtor_id: %', rec_client.id, rec_realtor.id;
+
+		temp_client_e_mail := rec_client.e_mail;
+		
+		UPDATE client SET e_mail = rec_realtor.e_mail
+		WHERE id = rec_client.id;
+
+		UPDATE realtor SET e_mail = temp_client_e_mail
+		WHERE id = rec_realtor.id;
+	END LOOP;
+END;
+$$;
+
+DROP PROCEDURE exchange_e_mail;
+
+BEGIN;
+CALL exchange_e_mail();
+ROLLBACK;
+------------------------------------------------------
+2.
+------------------------------------------------------
+SELECT * FROM client;
+
+CREATE OR REPLACE PROCEDURE update_clinet_name() // Изменяю имя у всех клиентов на имя + )
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	rec RECORD;
+	cur CURSOR FOR SELECT * FROM client FOR UPDATE;
+BEGIN
+	FOR rec IN cur LOOP
+		UPDATE client SET first_name = first_name || ')';
+	END LOOP;
+END;
+$$;
+
+DROP PROCEDURE update_clinet_name;
+
+BEGIN;
+CALL update_clinet_name();
+ROLLBACK;
+------------------------------------------------------
